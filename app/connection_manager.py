@@ -2,6 +2,7 @@ from fastapi import WebSocket
 from typing import List
 from app.logger import logger
 
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -9,11 +10,15 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info(f"Client connected. Total connections: {len(self.active_connections)}")
+        logger.info(
+            f"Client connected. Total connections: {len(self.active_connections)}"
+        )
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
-        logger.info(f"Client disconnected. Total connections: {len(self.active_connections)}")
+        logger.info(
+            f"Client disconnected. Total connections: {len(self.active_connections)}"
+        )
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
