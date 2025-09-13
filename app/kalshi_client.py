@@ -81,6 +81,7 @@ class KalshiWebSocketClient:
         ws_headers = create_headers(self._private_key, self._kalshi_api_key, method, endpoint)
 
         async with websockets.connect(base_url + endpoint, additional_headers=ws_headers) as websocket:   
+
             subscribe_msg = {
                 "id": 1,
                 "cmd": "subscribe",
@@ -95,3 +96,4 @@ class KalshiWebSocketClient:
             async for message in websocket:
                 data = json.loads(message)
                 yield data
+

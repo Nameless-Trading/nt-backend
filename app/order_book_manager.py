@@ -7,14 +7,20 @@ class OrderBook:
         self._no_orders: Dict[int, int] = {}
         self._top_of_book_cache: Optional[Dict[str, int]] = None
 
-    def update_from_snapshot(self, yes_orders: list[tuple[int, int]], no_orders: list[tuple[int, int]]) -> None:
+    def update_from_snapshot(self, yes_orders: list[tuple[int, int]] | None = None, no_orders: list[tuple[int, int]] | None = None) -> None:
+        if yes_orders is None:
+            yes_orders = [[i, 0] for i in range(1, 101)]
+
+        if no_orders is None:
+            no_orders = [[i, 0] for i in range(1, 101)]
+
         # Populate with initial data
         for price, quantity in yes_orders:
-            if quantity > 0:  # Only store positive quantities
+            if quantity >= 0:  # Only store positive quantities
                 self._yes_orders[price] = quantity
         
         for price, quantity in no_orders:
-            if quantity > 0:  # Only store positive quantities
+            if quantity >= 0:  # Only store positive quantities
                 self._no_orders[price] = quantity
 
     def update_from_delta(self, price: int, delta: int, side: str) -> None:
@@ -104,4 +110,10 @@ class OrderBookManager:
         order_book.update_from_delta(price, delta, side)
 
     def get_order_book(self, market_ticker) -> OrderBook:
-        return self._order_books[market_ticker]
+        if market_ticker in self._order_books:
+            return self._order_books[market_ticker]
+        else:
+            return None
+        
+    def get_all_tickers(self) -> list[str]:
+        return self._order_books.keys()
