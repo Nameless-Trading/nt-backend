@@ -5,16 +5,7 @@ import time
 import websockets
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
-import os
-from dotenv import load_dotenv
-from rich import print
-
-load_dotenv(override=True)
-
-KEY_ID = os.getenv("KALSHI_API_KEY")
-PRIVATE_KEY_PATH = "kalshi-api-key.txt"
-MARKET_TICKER = "KXNCAAFGAME-25SEP12COLOHOU-HOU"
-WS_URL = "wss://api.elections.kalshi.com/trade-api/ws/v2"
+import requests
 
 def sign_pss_text(private_key, text: str) -> str:
     """Sign message using RSA-PSS"""
@@ -29,7 +20,7 @@ def sign_pss_text(private_key, text: str) -> str:
     )
     return base64.b64encode(signature).decode('utf-8')
 
-def create_headers(private_key, method: str, path: str) -> dict:
+def create_headers(private_key: str, kalshi_api_key: str, method: str, path: str) -> dict:
     """Create authentication headers"""
     timestamp = str(int(time.time() * 1000))
     msg_string = timestamp + method + path.split('?')[0]
@@ -37,61 +28,70 @@ def create_headers(private_key, method: str, path: str) -> dict:
     
     return {
         "Content-Type": "application/json",
-        "KALSHI-ACCESS-KEY": KEY_ID,
+        "KALSHI-ACCESS-KEY": kalshi_api_key,
         "KALSHI-ACCESS-SIGNATURE": signature,
         "KALSHI-ACCESS-TIMESTAMP": timestamp,
     }
 
-async def orderbook_websocket(callback=None):
-    """Connect to WebSocket and subscribe to orderbook"""
-    with open(PRIVATE_KEY_PATH, 'rb') as f:
-        private_key = serialization.load_pem_private_key(
-            f.read(),
-            password=None
-        )
-    
-    ws_headers = create_headers(private_key, "GET", "/trade-api/ws/v2")
-    async with websockets.connect(WS_URL, additional_headers=ws_headers) as websocket:
-        print(f"Connected! Subscribing to orderbook for {MARKET_TICKER}")
-        
-        subscribe_msg = {
-            "id": 1,
-            "cmd": "subscribe",
-            "params": {
-                "channels": ["orderbook_delta"],
-                "market_tickers": ["KXNCAAFGAME-25SEP12COLOHOU-HOU", "KXNCAAFGAME-25SEP12COLOHOU-COLO"]
-            }
-        }
+class KalshiClient:
+    def __init__(self, kalshi_api_key: str, private_key_path: str) -> None:
 
-        await websocket.send(json.dumps(subscribe_msg))
-        
-        async for message in websocket:
-            data = json.loads(message)
-            msg_type = data.get("type")
+        self._kalshi_api_key = kalshi_api_key
+
+        with open(private_key_path, 'rb') as f:
+            self._private_key = serialization.load_pem_private_key(
+                f.read(),
+                password=None
+            )
+
+    def get_tickers(self) -> list[str]:
+        base_url = "https://api.elections.kalshi.com"
+        endpoint = "/trade-api/v2/markets/"
+        method = "GET"
+
+        params = {"limit": 1000, "status": "open", "series_ticker": "KXNCAAFGAME"}
+
+        headers = create_headers(self._private_key, self._kalshi_api_key, method, endpoint)
+
+        response = requests.get(base_url + endpoint, params=params, headers=headers)
+        markets = response.json()['markets']
+
+        tickers = [market['ticker'] for market in markets]
+
+        return tickers
+
+
+class KalshiWebSocketClient:
+
+    def __init__(self, kalshi_api_key: str, private_key_path: str) -> None:
+
+        self._kalshi_api_key = kalshi_api_key
+
+        with open(private_key_path, 'rb') as f:
+            self._private_key = serialization.load_pem_private_key(
+                f.read(),
+                password=None
+            )
+
+    async def subscribe(self, channels: list[str], market_tickers: list[str]):
+        """Connect to WebSocket and subscribe to orderbook"""
+        base_url = "wss://api.elections.kalshi.com"
+        endpoint = "/trade-api/ws/v2"
+        method = "GET"
+        ws_headers = create_headers(self._private_key, self._kalshi_api_key, method, endpoint)
+
+        async with websockets.connect(base_url + endpoint, additional_headers=ws_headers) as websocket:   
+            subscribe_msg = {
+                "id": 1,
+                "cmd": "subscribe",
+                "params": {
+                    "channels": channels,
+                    "market_tickers": market_tickers
+                }
+            }
+
+            await websocket.send(json.dumps(subscribe_msg))
             
-            if msg_type == "subscribed":
-                if callback:
-                    await callback(f"Subscribed: {data}")
-                else:
-                    print(f"Subscribed: {data}")
-                
-            elif msg_type == "orderbook_snapshot":
-                if callback:
-                    await callback(f"Orderbook snapshot: {data}")
-                else:
-                    print(f"Orderbook snapshot: {data}")
-                
-            elif msg_type == "orderbook_delta":
-                if callback:
-                    await callback(f"Orderbook update: {data}")
-                else:
-                    if 'client_order_id' in data.get('data', {}):
-                        print(f"Orderbook update (your order {data['data']['client_order_id']}): {data}")
-                    else:
-                        print(f"Orderbook update: {data}")
-                        
-            elif msg_type == "error":
-                if callback:
-                    await callback(f"Error: {data}")
-                else:
-                    print(f"Error: {data}")
+            async for message in websocket:
+                data = json.loads(message)
+                yield data
