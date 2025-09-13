@@ -63,6 +63,25 @@ class KalshiClient:
 
         return tickers
 
+    def get_markets(self, tickers: list[str] | None = None) -> list[str]:
+        base_url = "https://api.elections.kalshi.com"
+        endpoint = "/trade-api/v2/markets/"
+        method = "GET"
+
+        params = {"limit": 1000, "status": "open", "series_ticker": "KXNCAAFGAME"}
+
+        if tickers is not None:
+            params["tickers"] = ",".join(tickers)
+
+        headers = create_headers(
+            self._private_key, self._kalshi_api_key, method, endpoint
+        )
+
+        response = requests.get(base_url + endpoint, params=params, headers=headers)
+        markets = response.json()["markets"]
+
+        return markets
+
 
 class KalshiWebSocketClient:
     def __init__(self, kalshi_api_key: str, private_key_path: str) -> None:

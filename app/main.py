@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from app.order_book_manager import OrderBookManager
 from app.connection_manager import ConnectionManager
 from app.kalshi_client import KalshiClient, KalshiWebSocketClient
+from app.market_manager import MarketManager
 from app.logger import logger
 from typing import Optional
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ import json
 load_dotenv(override=True)
 
 # Global instances
+market_manager = MarketManager()
 order_book_manager = OrderBookManager()
 client_manager = ConnectionManager()
 kalshi_client: Optional[KalshiClient] = None
@@ -22,10 +24,22 @@ kalshi_websocket_client: Optional[KalshiWebSocketClient] = None
 async def broadcast_top_of_book(market_ticker: str):
     """Broadcast top of book for a specific ticker to all connected clients"""
     order_book = order_book_manager.get_order_book(market_ticker)
+    market = market_manager.get_market(market_ticker)
+
     if order_book:
         top_of_book = order_book.top_of_book()
 
-        await client_manager.broadcast(json.dumps(top_of_book))
+    message = {
+        **top_of_book,
+        "event_ticker": market.event_ticker,
+        "title": market.title,
+        "team_name": market.team_name,
+        "expected_expiration_time_utc": market.expected_expiration_time_utc.isoformat(),
+        "game_start_time_mt": market.game_start_time.isoformat(),
+        "status": market.status,
+    }
+
+    await client_manager.broadcast(json.dumps(message))
 
 
 async def send_all_top_of_books(websocket: WebSocket):
@@ -34,10 +48,22 @@ async def send_all_top_of_books(websocket: WebSocket):
 
     for ticker in all_tickers:
         order_book = order_book_manager.get_order_book(ticker)
+        market = market_manager.get_market(ticker)
+
         if order_book:
             top_of_book = order_book.top_of_book()
 
-            await websocket.send_text(json.dumps(top_of_book))
+        message = {
+            **top_of_book,
+            "event_ticker": market.event_ticker,
+            "title": market.title,
+            "team_name": market.team_name,
+            "expected_expiration_time_utc": market.expected_expiration_time_utc.isoformat(),
+            "game_start_time_mt": market.game_start_time.isoformat(),
+            "status": market.status,
+        }
+
+        await websocket.send_text(json.dumps(message))
 
 
 async def process_messages(
@@ -110,9 +136,10 @@ async def lifespan(app: FastAPI):
     kalshi_client = KalshiClient(kalshi_api_key, private_key_path)
     kalshi_websocket_client = KalshiWebSocketClient(kalshi_api_key, private_key_path)
 
-    # tickers = kalshi_client.get_tickers()
-    market_tickers = kalshi_client.get_tickers()
-    # market_tickers = ['KXNCAAFGAME-25SEP13CLEMGT-CLEM', 'KXNCAAFGAME-25SEP13CLEMGT-GT']
+    markets = kalshi_client.get_markets()
+    market_manager.load(markets)
+
+    market_tickers = market_manager.get_tickers()
     channels = ["orderbook_delta"]
     asyncio.create_task(
         process_messages(kalshi_websocket_client, channels, market_tickers)
