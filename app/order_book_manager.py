@@ -4,8 +4,8 @@ from typing import Dict, Optional
 class OrderBook:
     def __init__(self, market_ticker: str) -> None:
         self._market_ticker = market_ticker
-        self._yes_orders: Dict[int, int] = {}
-        self._no_orders: Dict[int, int] = {}
+        self._yes_orders = {}
+        self._no_orders = {}
         self._top_of_book_cache: Optional[Dict[str, int]] = None
 
     def update_from_snapshot(
@@ -13,11 +13,8 @@ class OrderBook:
         yes_orders: list[tuple[int, int]] | None = None,
         no_orders: list[tuple[int, int]] | None = None,
     ) -> None:
-        if yes_orders is None:
-            yes_orders = [[i, 0] for i in range(1, 101)]
-
-        if no_orders is None:
-            no_orders = [[i, 0] for i in range(1, 101)]
+        yes_orders = yes_orders or {}
+        no_orders = no_orders or {}
 
         # Populate with initial data
         for price, quantity in yes_orders:
@@ -59,10 +56,14 @@ class OrderBook:
             return self._top_of_book_cache
 
         # Find highest bid price (yes orders)
-        bid_price = max(self._yes_orders.keys()) if self._yes_orders else None
-        bid_quantity = (
-            self._yes_orders.get(bid_price) if bid_price is not None else None
-        )
+        if len(self._yes_orders.keys()) > 0:
+            bid_price = max(self._yes_orders.keys()) 
+            bid_quantity = (
+                self._yes_orders.get(bid_price)
+            )
+        else:
+            bid_price = None
+            bid_quantity = None
 
         # Find lowest ask price (convert no orders to ask prices)
         # No order at price X means asking price of (100 - X)
@@ -70,9 +71,13 @@ class OrderBook:
         ask_quantity = None
 
         # Find the lowest ask price (highest no order price)
-        highest_no_price = max(self._no_orders.keys())
-        ask_price = 100 - highest_no_price
-        ask_quantity = self._no_orders[highest_no_price]
+        if len(self._no_orders.keys()) > 0:
+            highest_no_price = max(self._no_orders.keys())
+            ask_price = 100 - highest_no_price
+            ask_quantity = self._no_orders[highest_no_price]
+        else:
+            ask_price = None
+            ask_quantity = None
 
         result = {
             "ticker": self._market_ticker,
