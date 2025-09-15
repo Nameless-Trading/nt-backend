@@ -6,10 +6,15 @@ from app.connection_manager import ConnectionManager
 from app.kalshi_client import KalshiClient, KalshiWebSocketClient
 from app.market_manager import MarketManager
 from app.logger import logger
+from app.database import read_dataframe
 from typing import Optional
 from dotenv import load_dotenv
 import os
 import json
+import polars as pl
+import datetime as dt
+
+LOGGING = False
 
 load_dotenv(override=True)
 
@@ -20,6 +25,35 @@ client_manager = ConnectionManager()
 kalshi_client: Optional[KalshiClient] = None
 kalshi_websocket_client: Optional[KalshiWebSocketClient] = None
 
+def get_game_days() -> list[dt.date]:
+    return (
+        read_dataframe('schedule')
+        .select(
+            pl.col('start_time').dt.convert_time_zone('America/Denver').dt.date().alias('date')
+        )
+        .select(
+            pl.col('date').unique()
+        )
+        .filter(
+            pl.col('date').ge(dt.date.today())
+        )
+        .sort('date')
+        .head(3)
+        ['date']
+        .to_list()
+    )
+
+def get_markets(dates_: list[dt.date]) -> pl.DataFrame:
+    return (
+        read_dataframe('open_markets')
+        .with_columns(
+            pl.col('estimated_start_time').dt.convert_time_zone('America/Denver')
+        )
+        .filter(
+            pl.col('estimated_start_time').dt.date().is_in(dates_)
+        )
+        .sort('estimated_start_time')
+    )
 
 async def broadcast_top_of_book(market_ticker: str):
     """Broadcast top of book for a specific ticker to all connected clients"""
@@ -36,7 +70,7 @@ async def broadcast_top_of_book(market_ticker: str):
         "team_name": market.team_name,
         "expected_expiration_time_utc": market.expected_expiration_time_utc.isoformat(),
         "game_start_time_mt": market.game_start_time.isoformat(),
-        "status": market.status,
+        "estimated_start_time": market.estimated_start_time.isoformat(),
     }
 
     await client_manager.broadcast(json.dumps(message))
@@ -60,7 +94,7 @@ async def send_all_top_of_books(websocket: WebSocket):
             "team_name": market.team_name,
             "expected_expiration_time_utc": market.expected_expiration_time_utc.isoformat(),
             "game_start_time_mt": market.game_start_time.isoformat(),
-            "status": market.status,
+            "estimated_start_time": market.estimated_start_time.isoformat(),
         }
 
         await websocket.send_text(json.dumps(message))
@@ -96,7 +130,8 @@ async def process_messages(
                 # Check if top of book changed and broadcast if it did
                 new_top = order_book_manager.get_order_book(market_ticker).top_of_book()
                 if prev_top != new_top:
-                    logger.info(new_top)
+                    if LOGGING:
+                        logger.info(new_top)
                     await broadcast_top_of_book(market_ticker)
 
             case "orderbook_delta":
@@ -116,7 +151,8 @@ async def process_messages(
                 # Check if top of book changed and broadcast if it did
                 new_top = order_book_manager.get_order_book(market_ticker).top_of_book()
                 if prev_top != new_top:
-                    logger.info(new_top)
+                    if LOGGING:
+                        logger.info(new_top)
                     await broadcast_top_of_book(market_ticker)
 
             case _:
@@ -133,10 +169,11 @@ async def lifespan(app: FastAPI):
     kalshi_api_key = os.getenv("KALSHI_API_KEY")
     private_key_path = "kalshi-api-key.txt"
 
-    kalshi_client = KalshiClient(kalshi_api_key, private_key_path)
+    # kalshi_client = KalshiClient(kalshi_api_key, private_key_path)
     kalshi_websocket_client = KalshiWebSocketClient(kalshi_api_key, private_key_path)
 
-    markets = kalshi_client.get_markets()
+    game_days = get_game_days()
+    markets = get_markets(game_days)
     market_manager.load(markets)
 
     market_tickers = market_manager.get_tickers()
@@ -161,7 +198,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # Send initial snapshot of all order books
-        logger.info("New client connected, sending all top of books")
         await send_all_top_of_books(websocket)
 
         # Keep connection alive and handle client messages

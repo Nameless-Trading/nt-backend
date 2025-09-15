@@ -2,6 +2,7 @@ from typing import Dict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+import polars as pl
 
 
 @dataclass
@@ -11,7 +12,7 @@ class Market:
     title: str
     team_name: str
     expected_expiration_time_utc: datetime
-    status: str
+    estimated_start_time: datetime
 
     @property
     def game_start_time(self) -> datetime:
@@ -24,19 +25,17 @@ class MarketManager:
     def __init__(self) -> None:
         self._markets: Dict[str, Market] = {}
 
-    def load(self, markets: list[dict]) -> None:
+    def load(self, markets_df: pl.DataFrame) -> None:
         markets_clean = [
             Market(
                 ticker=market["ticker"],
                 event_ticker=market["event_ticker"],
                 title=market["title"],
                 team_name=market["yes_sub_title"],
-                expected_expiration_time_utc=datetime.strptime(
-                    market["expected_expiration_time"], "%Y-%m-%dT%H:%M:%SZ"
-                ).replace(tzinfo=timezone.utc),
-                status=market["status"],
+                expected_expiration_time_utc=market['expected_expiration_time'],
+                estimated_start_time=market["estimated_start_time"],
             )
-            for market in markets
+            for market in markets_df.to_dicts()
         ]
 
         for market in markets_clean:
