@@ -1,6 +1,6 @@
 from typing import Dict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from zoneinfo import ZoneInfo
 import polars as pl
 
@@ -19,6 +19,10 @@ class Market:
         return self.expected_expiration_time_utc.astimezone(
             ZoneInfo("America/Denver")
         ) - timedelta(hours=3)
+    
+    @property
+    def game_date(self) -> date:
+        return self.game_start_time.date()
 
 
 class MarketManager:

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
 from app.order_book_manager import OrderBookManager
@@ -71,6 +72,7 @@ async def broadcast_top_of_book(market_ticker: str):
         "expected_expiration_time_utc": market.expected_expiration_time_utc.isoformat(),
         "game_start_time_mt": market.game_start_time.isoformat(),
         "estimated_start_time": market.estimated_start_time.isoformat(),
+        "game_date": market.game_date.strftime("%Y-%m-%d")
     }
 
     await client_manager.broadcast(json.dumps(message))
@@ -95,6 +97,7 @@ async def send_all_top_of_books(websocket: WebSocket):
             "expected_expiration_time_utc": market.expected_expiration_time_utc.isoformat(),
             "game_start_time_mt": market.game_start_time.isoformat(),
             "estimated_start_time": market.estimated_start_time.isoformat(),
+            "game_date": market.game_date.strftime("%Y-%m-%d")
         }
 
         await websocket.send_text(json.dumps(message))
@@ -190,6 +193,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -224,3 +235,17 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         client_manager.disconnect(websocket)
+
+@app.get("/game-days")
+def game_days() -> list[str]:
+    return (
+        read_dataframe('open_markets')
+        .select(
+            pl.col('estimated_start_time').dt.convert_time_zone('America/Denver').dt.date().alias('date')
+        )
+        .select(pl.col('date').cast(pl.String).unique())
+        .sort('date')
+        .head(3)
+        ['date']
+        .to_list()
+    )
