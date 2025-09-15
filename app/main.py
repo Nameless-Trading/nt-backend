@@ -167,10 +167,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
 
     kalshi_api_key = os.getenv("KALSHI_API_KEY")
-    private_key_path = "kalshi-api-key.txt"
+    private_key = os.getenv("KALSHI_PRIVATE_KEY")
 
     # kalshi_client = KalshiClient(kalshi_api_key, private_key_path)
-    kalshi_websocket_client = KalshiWebSocketClient(kalshi_api_key, private_key_path)
+    kalshi_websocket_client = KalshiWebSocketClient(kalshi_api_key, private_key)
 
     game_days = get_game_days()
     markets = get_markets(game_days)
