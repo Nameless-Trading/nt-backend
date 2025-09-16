@@ -15,7 +15,7 @@ import json
 import polars as pl
 import datetime as dt
 
-LOGGING = True
+LOGGING = False
 
 load_dotenv(override=True)
 
@@ -251,3 +251,7 @@ def game_days() -> list[str]:
         ['date']
         .to_list()
     )
+
+@app.get("/")
+def hello_world() -> str:
+    return "Hello, world!"
