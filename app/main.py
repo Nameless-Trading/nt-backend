@@ -194,6 +194,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 sveltekit_url = os.getenv("SVELTEKIT_URL")
+print(sveltekit_url)
 
 app.add_middleware(
     CORSMiddleware,
