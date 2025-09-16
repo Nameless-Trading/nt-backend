@@ -198,7 +198,7 @@ print(sveltekit_url)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[sveltekit_url],
+    allow_origins=[sveltekit_url, "https://nt-frontend-production.up.railway.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
