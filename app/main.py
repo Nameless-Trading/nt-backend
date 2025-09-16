@@ -15,7 +15,7 @@ import json
 import polars as pl
 import datetime as dt
 
-LOGGING = False
+LOGGING = True
 
 load_dotenv(override=True)
 
