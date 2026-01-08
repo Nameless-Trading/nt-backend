@@ -11,9 +11,3 @@ dependencies = [
     "polars>=1.36.1",
     "python-dotenv>=1.2.1",
 ]
-
-[dependency-groups]
-dev = [
-    "altair>=6.0.0",
-    "marimo>=0.18.4",
-]
