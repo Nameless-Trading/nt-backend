@@ -135,7 +135,7 @@ def get_portfolio_history(
             interval = dt.timedelta(days=1)
             history = get_portfolio_history_between_start_and_end(start, end)
         case "ALL":
-            start = dt.date(2026, 1, 5)
+            start = dt.date(2026, 1, 2)
             interval = dt.timedelta(days=1)
             history = get_portfolio_history_between_start_and_end(start, end)
         case _:
