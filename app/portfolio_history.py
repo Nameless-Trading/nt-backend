@@ -145,4 +145,8 @@ def get_portfolio_history(
 
     portfolio_history_clean = clean_portfolio_history(portfolio_history)
 
-    return aggregate_portfolio_history(portfolio_history_clean, interval)
+    portfolio_history_agg = aggregate_portfolio_history(
+        portfolio_history_clean, interval
+    )
+
+    return portfolio_history_agg
