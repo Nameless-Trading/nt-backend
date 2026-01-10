@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from alpaca.trading.requests import GetPortfolioHistoryRequest
 from models import PortfolioSnapshot
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 
 def clean_portfolio_history(portfolio_history: pl.DataFrame) -> pl.DataFrame:
@@ -51,7 +52,7 @@ def aggregate_portfolio_history(
 
 
 def get_portfolio_history_for_today() -> pl.DataFrame:
-    date_ = dt.date.today()
+    date_ = dt.datetime.now(ZoneInfo("America/New_York"))
     ext_open = dt.time(4, 0, 0, tzinfo=ZoneInfo("America/New_York"))
     ext_close = dt.time(20, 0, 0, tzinfo=ZoneInfo("America/New_York"))
 
@@ -109,7 +110,7 @@ def get_portfolio_history_between_start_and_end(
 def get_portfolio_history(
     period: Literal["1D", "5D", "1M", "6M", "1Y", "ALL"],
 ) -> pl.DataFrame:
-    end = dt.date.today() - dt.timedelta(days=1)  # yesterday
+    end = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(days=1)  # yesterday
     month = 21
     year = 252
 
