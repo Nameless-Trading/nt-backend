@@ -7,6 +7,7 @@ from alpaca.trading.requests import GetPortfolioHistoryRequest
 from models import PortfolioSnapshot
 from typing import Literal
 from zoneinfo import ZoneInfo
+import pandas_market_calendars as mcal
 
 
 def clean_portfolio_history(portfolio_history: pl.DataFrame) -> pl.DataFrame:
@@ -51,13 +52,37 @@ def aggregate_portfolio_history(
     )
 
 
+def get_last_market_date() -> dt.date:
+    nyse = mcal.get_calendar("NYSE")
+    today = dt.datetime.now(ZoneInfo("America/New_York")).date()
+
+    schedule = nyse.valid_days(
+        start_date=today - dt.timedelta(days=10), end_date=today + dt.timedelta(days=10)
+    )
+
+    valid_dates = [d.date() for d in schedule if d.date() <= today]
+
+    return valid_dates[-1]
+
+
 def get_portfolio_history_for_today() -> pl.DataFrame:
-    date_ = dt.datetime.now(ZoneInfo("America/New_York"))
+    today = dt.datetime.now(ZoneInfo("America/New_York"))
+    last_market_date = get_last_market_date()
+
+    if today != last_market_date:
+        return pl.DataFrame(
+            schema={
+                "timestamp": pl.Datetime(time_zone="UTC"),
+                "daily_cumulative_return": pl.Float64,
+                "daily_values": pl.Float64,
+            }
+        )
+
     ext_open = dt.time(4, 0, 0, tzinfo=ZoneInfo("America/New_York"))
     ext_close = dt.time(20, 0, 0, tzinfo=ZoneInfo("America/New_York"))
 
-    start = dt.datetime.combine(date_, ext_open)
-    end = dt.datetime.combine(date_, ext_close)
+    start = dt.datetime.combine(today, ext_open)
+    end = dt.datetime.combine(today, ext_close)
 
     alpaca_client = get_alpaca_trading_client()
 
@@ -110,7 +135,9 @@ def get_portfolio_history_between_start_and_end(
 def get_portfolio_history(
     period: Literal["1D", "5D", "1M", "6M", "1Y", "ALL"],
 ) -> pl.DataFrame:
-    end = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(days=1)  # yesterday
+    end = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(
+        days=1
+    )  # yesterday
     month = 21
     year = 252
 
