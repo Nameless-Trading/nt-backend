@@ -66,7 +66,7 @@ def get_last_market_date() -> dt.date:
 
 
 def get_portfolio_history_for_today() -> pl.DataFrame:
-    today = dt.datetime.now(ZoneInfo("America/New_York"))
+    today = dt.datetime.now(ZoneInfo("America/New_York")).date()
     last_market_date = get_last_market_date()
 
     if today != last_market_date:
@@ -178,3 +178,7 @@ def get_portfolio_history(
     )
 
     return portfolio_history_agg
+
+if __name__ == '__main__':
+    result = get_portfolio_history("1D")
+    print(result)
