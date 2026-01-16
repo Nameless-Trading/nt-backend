@@ -9,6 +9,6 @@ dependencies = [
     "bear-lake>=0.1.5",
     "fastapi[standard]>=0.128.0",
     "pandas-market-calendars>=5.2.4",
-    "polars>=1.36.1",
+    "polars>=1.37.1",
     "python-dotenv>=1.2.1",
 ]

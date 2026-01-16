@@ -15,14 +15,14 @@ def clean_portfolio_history(portfolio_history: pl.DataFrame) -> pl.DataFrame:
         portfolio_history.sort("timestamp")
         .with_columns(
             pl.col("timestamp").dt.convert_time_zone("America/New_York"),
-            pl.col("daily_values").pct_change().fill_null(0).alias("return_"),
+            pl.col("equity").pct_change().fill_null(0).alias("return_"),
         )
         .with_columns(
             pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
         )
         .select(
             "timestamp",
-            pl.col("daily_values").alias("value"),
+            pl.col("equity").alias("value"),
             pl.col("return_"),
             pl.col("cumulative_return"),
         )
@@ -73,8 +73,7 @@ def get_portfolio_history_for_today() -> pl.DataFrame:
         return pl.DataFrame(
             schema={
                 "timestamp": pl.Datetime(time_zone="UTC"),
-                "daily_cumulative_return": pl.Float64,
-                "daily_values": pl.Float64,
+                "equity": pl.Float64,
             }
         )
 
@@ -99,12 +98,10 @@ def get_portfolio_history_for_today() -> pl.DataFrame:
     portfolio_history = pl.DataFrame(
         {
             "timestamp": response.timestamp,
-            "daily_cumulative_return": response.profit_loss_pct,
-            "daily_values": response.base_value,
+            "equity": response.equity,
         }
     ).with_columns(
         pl.from_epoch("timestamp").dt.convert_time_zone("UTC"),
-        pl.col("daily_values").mul(pl.col("daily_cumulative_return").add(1)),
     )
 
     return portfolio_history
@@ -178,7 +175,3 @@ def get_portfolio_history(
     )
 
     return portfolio_history_agg
-
-if __name__ == '__main__':
-    result = get_portfolio_history("1D")
-    print(result)
