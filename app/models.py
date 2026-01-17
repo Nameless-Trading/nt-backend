@@ -6,3 +6,10 @@ class PortfolioSnapshot(BaseModel):
     value: float
     return_: float
     cumulative_return: float
+
+
+class BenchmarkSnapshot(BaseModel):
+    timestamp: str
+    price: float
+    return_: float
+    cumulative_return: float

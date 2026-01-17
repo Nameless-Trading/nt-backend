@@ -1,5 +1,6 @@
-import bear_lake as bl
 import os
+
+import bear_lake as bl
 from dotenv import load_dotenv
 
 load_dotenv()

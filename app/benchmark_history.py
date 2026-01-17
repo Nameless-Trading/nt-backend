@@ -4,62 +4,65 @@ from zoneinfo import ZoneInfo
 
 import bear_lake as bl
 import polars as pl
-from alpaca.trading.requests import GetPortfolioHistoryRequest
-from clients import get_alpaca_trading_client, get_bear_lake_client
+from alpaca.data.enums import Adjustment
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from clients import get_alpaca_historical_stock_data_client, get_bear_lake_client
 from utils import get_last_market_date
 
 
-def clean_portfolio_history(portfolio_history: pl.DataFrame) -> pl.DataFrame:
+def clean_benchmark_history(benchmark_history: pl.DataFrame) -> pl.DataFrame:
     return (
-        portfolio_history.sort("timestamp")
+        benchmark_history.sort("timestamp")
         .with_columns(
             pl.col("timestamp").dt.convert_time_zone("America/New_York"),
-            pl.col("equity").pct_change().fill_null(0).alias("return_"),
+            pl.col("close").pct_change().fill_null(0).alias("return_"),
         )
         .with_columns(
             pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
         )
         .select(
             "timestamp",
-            pl.col("equity").alias("value"),
+            pl.col("close").alias("price"),
             pl.col("return_"),
             pl.col("cumulative_return"),
         )
     )
 
 
-def aggregate_portfolio_history(
-    portfolio_history: pl.DataFrame, interval: dt.timedelta
+def aggregate_benchmark_history(
+    benchmark_history: pl.DataFrame, interval: dt.timedelta
 ) -> pl.DataFrame:
     market_open = dt.time(7, 30, 0, tzinfo=ZoneInfo("America/New_York"))
     market_close = dt.time(16, 0, 0, tzinfo=ZoneInfo("America/New_York"))
 
     return (
-        portfolio_history.filter(
+        benchmark_history.filter(
             pl.col("timestamp").dt.time().is_between(market_open, market_close)
         )
         .sort("timestamp")
         .with_columns(pl.col("timestamp").dt.date().alias("date"))
         .group_by_dynamic("timestamp", every=interval)
-        .agg(pl.col("value").last())
+        .agg(pl.col("price").last())
         .sort("timestamp")
-        .with_columns(pl.col("value").pct_change().fill_null(0).alias("return_"))
+        .with_columns(pl.col("price").pct_change().fill_null(0).alias("return_"))
         .with_columns(
             pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
         )
-        .select("timestamp", "value", "return_", "cumulative_return")
+        .select("timestamp", "price", "return_", "cumulative_return")
     )
 
 
-def get_portfolio_history_for_today() -> pl.DataFrame:
+def get_benchmark_history_for_today(tickers: list[str]) -> pl.DataFrame:
     today = dt.datetime.now(ZoneInfo("America/New_York")).date()
     last_market_date = get_last_market_date()
 
     if today != last_market_date:
         return pl.DataFrame(
             schema={
-                "timestamp": pl.Datetime(time_zone="UTC"),
-                "equity": pl.Float64,
+                "timestamp": pl.Datetime(time_zone="UTC", time_unit="ns"),
+                "ticker": pl.String,
+                "close": pl.Float64,
             }
         )
 
@@ -69,32 +72,27 @@ def get_portfolio_history_for_today() -> pl.DataFrame:
     start = dt.datetime.combine(today, ext_open)
     end = dt.datetime.combine(today, ext_close)
 
-    alpaca_client = get_alpaca_trading_client()
+    alpaca_client = get_alpaca_historical_stock_data_client()
 
-    history_filter = GetPortfolioHistoryRequest(
-        timeframe="1Min",  # Can only get 7 days of history.
+    request = StockBarsRequest(
+        symbol_or_symbols=tickers,
         start=start,
         end=end,
-        intraday_reporting="extended_hours",  # market_hours: 9:30am to 4pm ET. extended_hours: 4am to 8pm ET
-        pnl_reset="per_day",
+        timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Minute),
+        adjustment=Adjustment.ALL,
     )
 
-    response = alpaca_client.get_portfolio_history(history_filter)
+    stock_bars = alpaca_client.get_stock_bars(request)
 
-    portfolio_history = pl.DataFrame(
-        {
-            "timestamp": response.timestamp,
-            "equity": response.equity,
-        }
-    ).with_columns(
-        pl.from_epoch("timestamp").dt.convert_time_zone("UTC"),
+    return (
+        pl.from_pandas(stock_bars.df.reset_index())
+        .rename({"symbol": "ticker"})
+        .select("timestamp", "ticker", "close")
     )
 
-    return portfolio_history
 
-
-def get_portfolio_history_between_start_and_end(
-    start: dt.date, end: dt.date
+def get_benchmark_history_between_start_and_end(
+    tickers: list[str], start: dt.date, end: dt.date
 ) -> pl.DataFrame:
     bear_lake_client = get_bear_lake_client()
 
@@ -104,18 +102,21 @@ def get_portfolio_history_between_start_and_end(
     start = dt.datetime.combine(start, ext_open)
     end = dt.datetime.combine(end, ext_close)
 
-    portfolio_history = bear_lake_client.query(
-        bl.table("portfolio_history").filter(
+    benchmark_history = bear_lake_client.query(
+        bl.table("benchmark_history")
+        .filter(
             pl.col("timestamp")
             .dt.convert_time_zone("America/New_York")
-            .is_between(start, end)
+            .is_between(start, end),
+            pl.col("ticker").is_in(tickers),
         )
+        .select("timestamp", "ticker", "close")
     )
 
-    return portfolio_history
+    return benchmark_history
 
 
-def get_portfolio_history(
+def get_benchmark_history(
     period: Literal["1D", "5D", "1M", "6M", "1Y", "ALL"],
 ) -> pl.DataFrame:
     end = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(
@@ -123,41 +124,42 @@ def get_portfolio_history(
     )  # yesterday
     month = 21
     year = 252
+    tickers = ["SPY"]
 
-    today = get_portfolio_history_for_today()
+    today = get_benchmark_history_for_today(tickers)
 
     match period:
         case "1D":
-            return clean_portfolio_history(today)
+            return clean_benchmark_history(today)
         case "5D":
             start = end - dt.timedelta(days=5)
             interval = dt.timedelta(minutes=10)
-            history = get_portfolio_history_between_start_and_end(start, end)
+            history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "1M":
             start = end - dt.timedelta(days=1 * month)
             interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
+            history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "6M":
             start = end - dt.timedelta(days=6 * month)
             interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
+            history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "1Y":
             start = end - dt.timedelta(days=1 * year)
             interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
+            history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "ALL":
             start = dt.date(2026, 1, 2)
             interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
+            history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case _:
             raise ValueError(f"Period not supported: {period}")
 
-    portfolio_history = pl.concat([history, today])
+    benchmark_history = pl.concat([history, today])
 
-    portfolio_history_clean = clean_portfolio_history(portfolio_history)
+    benchmark_history_clean = clean_benchmark_history(benchmark_history)
 
-    portfolio_history_agg = aggregate_portfolio_history(
-        portfolio_history_clean, interval
+    benchmark_history_agg = aggregate_benchmark_history(
+        benchmark_history_clean, interval
     )
 
-    return portfolio_history_agg
+    return benchmark_history_agg
