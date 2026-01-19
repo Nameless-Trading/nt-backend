@@ -103,7 +103,7 @@ def get_benchmark_history_between_start_and_end(
     end = dt.datetime.combine(end, ext_close)
 
     benchmark_history = bear_lake_client.query(
-        bl.table("benchmark_history")
+        bl.table("etf_history")
         .filter(
             pl.col("timestamp")
             .dt.convert_time_zone("America/New_York")
@@ -163,3 +163,8 @@ def get_benchmark_history(
     )
 
     return benchmark_history_agg
+
+if __name__ == '__main__':
+    print(
+        get_benchmark_history('5D')
+    )
