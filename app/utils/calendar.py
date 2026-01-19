@@ -22,7 +22,7 @@ def get_last_market_dates(n: int = 1) -> dt.date:
     today = dt.datetime.now(ZoneInfo("America/New_York")).date()
 
     schedule = nyse.valid_days(
-        start_date=today - dt.timedelta(days=10), end_date=today + dt.timedelta(days=10)
+        start_date=today - dt.timedelta(days=n*5), end_date=today + dt.timedelta(days=10)
     )
 
     valid_dates = [d.date() for d in schedule if d.date() <= today]
