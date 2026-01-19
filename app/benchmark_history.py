@@ -8,7 +8,7 @@ from alpaca.data.enums import Adjustment
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from clients import get_alpaca_historical_stock_data_client, get_bear_lake_client
-from utils import get_last_market_date
+from utils import get_last_market_date, get_last_market_dates
 
 
 def clean_benchmark_history(benchmark_history: pl.DataFrame) -> pl.DataFrame:
@@ -119,11 +119,9 @@ def get_benchmark_history_between_start_and_end(
 def get_benchmark_history(
     period: Literal["1D", "5D", "1M", "6M", "1Y", "ALL"],
 ) -> pl.DataFrame:
-    end = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(
-        days=1
-    )  # yesterday
-    month = 21
-    year = 252
+    end = (
+        dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(days=1)
+    ).date()  # yesterday
     tickers = ["SPY"]
 
     today = get_benchmark_history_for_today(tickers)
@@ -132,19 +130,19 @@ def get_benchmark_history(
         case "1D":
             return clean_benchmark_history(today)
         case "5D":
-            start = end - dt.timedelta(days=5)
-            interval = dt.timedelta(minutes=10)
+            start = get_last_market_dates(n=5)[0]
+            interval = dt.timedelta(hours=1)
             history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "1M":
-            start = end - dt.timedelta(days=1 * month)
-            interval = dt.timedelta(days=1)
+            start = get_last_market_dates(n=21)[0]
+            interval = dt.timedelta(hours=1)
             history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "6M":
-            start = end - dt.timedelta(days=6 * month)
+            start = get_last_market_dates(n=21 * 6)[0]
             interval = dt.timedelta(days=1)
             history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "1Y":
-            start = end - dt.timedelta(days=1 * year)
+            start = get_last_market_dates(n=252)[0]
             interval = dt.timedelta(days=1)
             history = get_benchmark_history_between_start_and_end(tickers, start, end)
         case "ALL":
@@ -163,8 +161,3 @@ def get_benchmark_history(
     )
 
     return benchmark_history_agg
-
-if __name__ == '__main__':
-    print(
-        get_benchmark_history('5D')
-    )

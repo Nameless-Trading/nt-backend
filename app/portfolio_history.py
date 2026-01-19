@@ -6,7 +6,7 @@ import bear_lake as bl
 import polars as pl
 from alpaca.trading.requests import GetPortfolioHistoryRequest
 from clients import get_alpaca_trading_client, get_bear_lake_client
-from utils import get_last_market_date
+from utils import get_last_market_date, get_last_market_dates
 
 
 def clean_portfolio_history(portfolio_history: pl.DataFrame) -> pl.DataFrame:
@@ -118,9 +118,9 @@ def get_portfolio_history_between_start_and_end(
 def get_portfolio_history(
     period: Literal["1D", "5D", "1M", "6M", "1Y", "ALL"],
 ) -> pl.DataFrame:
-    end = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(
-        days=1
-    )  # yesterday
+    end = (
+        dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(days=1)
+    ).date()  # yesterday
     month = 21
     year = 252
 
@@ -130,19 +130,19 @@ def get_portfolio_history(
         case "1D":
             return clean_portfolio_history(today)
         case "5D":
-            start = end - dt.timedelta(days=5)
-            interval = dt.timedelta(minutes=10)
+            start = get_last_market_dates(n=5)[0]
+            interval = dt.timedelta(hours=1)
             history = get_portfolio_history_between_start_and_end(start, end)
         case "1M":
-            start = end - dt.timedelta(days=1 * month)
-            interval = dt.timedelta(days=1)
+            start = get_last_market_dates(n=21)[0]
+            interval = dt.timedelta(hours=1)
             history = get_portfolio_history_between_start_and_end(start, end)
         case "6M":
-            start = end - dt.timedelta(days=6 * month)
+            start = get_last_market_dates(n=21 * 6)[0]
             interval = dt.timedelta(days=1)
             history = get_portfolio_history_between_start_and_end(start, end)
         case "1Y":
-            start = end - dt.timedelta(days=1 * year)
+            start = get_last_market_dates(n=252)[0]
             interval = dt.timedelta(days=1)
             history = get_portfolio_history_between_start_and_end(start, end)
         case "ALL":
