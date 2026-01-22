@@ -9,48 +9,6 @@ from clients import get_alpaca_trading_client, get_bear_lake_client
 from utils import get_last_market_date, get_last_market_dates
 
 
-def clean_portfolio_history(portfolio_history: pl.DataFrame) -> pl.DataFrame:
-    return (
-        portfolio_history.sort("timestamp")
-        .with_columns(
-            pl.col("timestamp").dt.convert_time_zone("America/New_York"),
-            pl.col("equity").pct_change().fill_null(0).alias("return_"),
-        )
-        .with_columns(
-            pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
-        )
-        .select(
-            "timestamp",
-            pl.col("equity").alias("value"),
-            pl.col("return_"),
-            pl.col("cumulative_return"),
-        )
-    )
-
-
-def aggregate_portfolio_history(
-    portfolio_history: pl.DataFrame, interval: dt.timedelta
-) -> pl.DataFrame:
-    market_open = dt.time(7, 30, 0, tzinfo=ZoneInfo("America/New_York"))
-    market_close = dt.time(16, 0, 0, tzinfo=ZoneInfo("America/New_York"))
-
-    return (
-        portfolio_history.filter(
-            pl.col("timestamp").dt.time().is_between(market_open, market_close)
-        )
-        .sort("timestamp")
-        .with_columns(pl.col("timestamp").dt.date().alias("date"))
-        .group_by_dynamic("timestamp", every=interval)
-        .agg(pl.col("value").last())
-        .sort("timestamp")
-        .with_columns(pl.col("value").pct_change().fill_null(0).alias("return_"))
-        .with_columns(
-            pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
-        )
-        .select("timestamp", "value", "return_", "cumulative_return")
-    )
-
-
 def get_portfolio_history_for_today() -> pl.DataFrame:
     today = dt.datetime.now(ZoneInfo("America/New_York")).date()
     last_market_date = get_last_market_date()
@@ -115,49 +73,85 @@ def get_portfolio_history_between_start_and_end(
     return portfolio_history
 
 
-def get_portfolio_history(
-    period: Literal["1D", "5D", "1M", "6M", "1Y", "ALL"],
-) -> pl.DataFrame:
-    end = (
-        dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(days=1)
-    ).date()  # yesterday
-    month = 21
-    year = 252
+def get_portfolio_history_base(base_date: dt.date) -> pl.DataFrame:
+    bear_lake_client = get_bear_lake_client()
 
-    today = get_portfolio_history_for_today()
+    market_open = dt.time(7, 30, 0, tzinfo=ZoneInfo("America/New_York"))
+    market_close = dt.time(16, 0, 0, tzinfo=ZoneInfo("America/New_York"))
 
-    match period:
-        case "1D":
-            return clean_portfolio_history(today)
-        case "5D":
-            start = get_last_market_dates(n=5)[0]
-            interval = dt.timedelta(hours=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
-        case "1M":
-            start = get_last_market_dates(n=21)[0]
-            interval = dt.timedelta(hours=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
-        case "6M":
-            start = get_last_market_dates(n=21 * 6)[0]
-            interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
-        case "1Y":
-            start = get_last_market_dates(n=252)[0]
-            interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
-        case "ALL":
-            start = dt.date(2026, 1, 2)
-            interval = dt.timedelta(days=1)
-            history = get_portfolio_history_between_start_and_end(start, end)
-        case _:
-            raise ValueError(f"Period not supported: {period}")
+    start = dt.datetime.combine(base_date, market_open)
+    end = dt.datetime.combine(base_date, market_close)
 
-    portfolio_history = pl.concat([history, today])
-
-    portfolio_history_clean = clean_portfolio_history(portfolio_history)
-
-    portfolio_history_agg = aggregate_portfolio_history(
-        portfolio_history_clean, interval
+    portfolio_history = bear_lake_client.query(
+        bl.table("portfolio_history")
+        .filter(
+            pl.col("timestamp")
+            .dt.convert_time_zone("America/New_York")
+            .is_between(start, end)
+        )
+        .filter(pl.col("timestamp").eq(pl.col("timestamp").max()))
     )
 
-    return portfolio_history_agg
+    return portfolio_history
+
+
+def calculate_intraday_returns(
+    equity: pl.DataFrame, interval: dt.timedelta
+) -> pl.DataFrame:
+    return (
+        equity.sort("timestamp")
+        .with_columns(pl.col("timestamp").dt.convert_time_zone("America/New_York"))
+        .with_columns(pl.col("equity").pct_change().alias("return_"))
+        .with_columns(
+            pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
+        )
+        .drop_nulls("return_")
+        .sort("timestamp")
+        .group_by_dynamic(index_column="timestamp", every=interval)
+        .agg(
+            pl.col("equity").last().alias("value"),
+            pl.col("return_").add(1).product().sub(1),
+            pl.col("cumulative_return").last(),
+        )
+        .sort("timestamp")
+    )
+
+
+def get_portfolio_history(
+    period: Literal["TODAY", "5D", "1M", "6M", "1Y", "ALL"],
+) -> pl.DataFrame:
+    timezone = ZoneInfo("America/New_York")
+    yesterday = (dt.datetime.now(timezone) - dt.timedelta(days=1)).date()
+
+    match period:
+        case "TODAY":
+            offset = 1
+            interval = dt.timedelta(minutes=1)
+        case "5D":
+            offset = 5
+            interval = dt.timedelta(hours=1)
+        case "1M":
+            offset = 21
+            interval = dt.timedelta(hours=1)
+        case "6M":
+            offset = 21 * 6
+            interval = dt.timedelta(days=1)
+        case "1Y":
+            offset = 252
+            interval = dt.timedelta(days=1)
+        case "ALL":
+            start = dt.date(2026, 1, 2)
+            base_date = dt.date(2025, 12, 31)
+            interval = dt.timedelta(days=1)
+
+    if period != "ALL":
+        start = get_last_market_dates(n=offset)[0]
+        base_date = get_last_market_dates(n=offset + 1)[0]
+
+    equity_today = get_portfolio_history_for_today()
+    equity_history = get_portfolio_history_between_start_and_end(start, yesterday)
+    equity_base = get_portfolio_history_base(base_date)
+
+    equity = pl.concat([equity_base, equity_history, equity_today])
+
+    return calculate_intraday_returns(equity, interval)
