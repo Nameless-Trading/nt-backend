@@ -105,6 +105,12 @@ def calculate_intraday_returns(
         .with_columns(
             pl.col("return_").add(1).cum_prod().sub(1).alias("cumulative_return")
         )
+        .with_columns(
+            pl.col("return_").mul(pl.col("equity").first()).alias("return_dollar"),
+            pl.col("cumulative_return")
+            .mul(pl.col("equity").first())
+            .alias("cumulative_return_dollar"),
+        )
         .drop_nulls("return_")
         .sort("timestamp")
         .group_by_dynamic(index_column="timestamp", every=interval)
@@ -112,6 +118,8 @@ def calculate_intraday_returns(
             pl.col("equity").last().alias("value"),
             pl.col("return_").add(1).product().sub(1),
             pl.col("cumulative_return").last(),
+            pl.col("return_dollar").last(),
+            pl.col("cumulative_return_dollar").last(),
         )
         .sort("timestamp")
     )
