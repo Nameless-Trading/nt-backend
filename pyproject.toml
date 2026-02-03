@@ -13,3 +13,8 @@ dependencies = [
     "polars>=1.37.1",
     "python-dotenv>=1.2.1",
 ]
+
+[dependency-groups]
+dev = [
+    "rich>=14.2.0",
+]

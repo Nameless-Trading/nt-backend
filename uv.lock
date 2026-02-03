@@ -815,6 +815,11 @@ dependencies = [
     { name = "python-dotenv" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "rich" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alpaca-py", specifier = ">=0.43.2" },
@@ -825,6 +830,9 @@ requires-dist = [
     { name = "polars", specifier = ">=1.37.1" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "rich", specifier = ">=14.2.0" }]
 
 [[package]]
 name = "numpy"
