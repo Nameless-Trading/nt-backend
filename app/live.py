@@ -123,7 +123,9 @@ def calculate_returns(equity: pl.DataFrame, interval: dt.timedelta) -> pl.DataFr
     )
 
 
-def get_equity(period: Literal["TODAY", "5D", "1M", "6M", "1Y", "ALL"]) -> pl.DataFrame:
+def get_period_bounds(
+    period: Literal["TODAY", "5D", "1M", "6M", "1Y", "ALL"],
+) -> tuple[dt.date, dt.date, dt.date]:
     timezone = ZoneInfo("America/New_York")
     yesterday = (dt.datetime.now(timezone) - dt.timedelta(days=1)).date()
 
@@ -139,18 +141,51 @@ def get_equity(period: Literal["TODAY", "5D", "1M", "6M", "1Y", "ALL"]) -> pl.Da
         case "1Y":
             offset = 252
         case "ALL":
-            start = dt.date(2026, 1, 2)
-            base_date = dt.date(2025, 12, 31)
+            return dt.date(2026, 1, 2), dt.date(2025, 12, 31), yesterday
 
-    if period != "ALL":
-        start = get_last_market_dates(n=offset)[0]
-        base_date = get_last_market_dates(n=offset + 1)[0]
+    start = get_last_market_dates(n=offset)[0]
+    base_date = get_last_market_dates(n=offset + 1)[0]
+
+    return start, base_date, yesterday
+
+
+def get_equity(period: Literal["TODAY", "5D", "1M", "6M", "1Y", "ALL"]) -> pl.DataFrame:
+    start, base_date, yesterday = get_period_bounds(period)
 
     equity_today = get_portfolio_history_for_today()
     equity_history = get_portfolio_history_between_start_and_end(start, yesterday)
     equity_base = get_portfolio_history_base(base_date)
 
     return pl.concat([equity_base, equity_history, equity_today])
+
+
+def get_benchmark_returns(start: dt.date, end: dt.date) -> pl.DataFrame:
+    bear_lake_client = get_bear_lake_client()
+
+    benchmark_returns = bear_lake_client.query(
+        bl.table("benchmark_returns").filter(pl.col("date").is_between(start, end))
+    )
+
+    return benchmark_returns.sort("date")
+
+
+def add_benchmark_cumulative_return(
+    returns: pl.DataFrame, benchmark_returns: pl.DataFrame
+) -> pl.DataFrame:
+    # Benchmark returns are daily; align them to each (possibly intraday) portfolio
+    # snapshot by date and carry the last known value forward within a day.
+    benchmark_cumulative = benchmark_returns.select(
+        pl.col("date"),
+        pl.col("return").add(1).cum_prod().sub(1).alias("benchmark_cumulative_return"),
+    )
+
+    return (
+        returns.with_columns(pl.col("timestamp").dt.date().alias("date"))
+        .join(benchmark_cumulative, on="date", how="left")
+        .sort("timestamp")
+        .with_columns(pl.col("benchmark_cumulative_return").forward_fill())
+        .drop("date")
+    )
 
 
 def get_portfolio_history(
@@ -166,7 +201,17 @@ def get_portfolio_history(
         case "6M" | "1Y" | "ALL":
             interval = dt.timedelta(days=1)
 
-    return calculate_returns(equity, interval)
+    returns = calculate_returns(equity, interval)
+
+    # The benchmark is a daily series, so it is only meaningful for the
+    # multi-day periods (everything except TODAY).
+    if period == "TODAY":
+        return returns
+
+    start, _, yesterday = get_period_bounds(period)
+    benchmark_returns = get_benchmark_returns(start, yesterday)
+
+    return add_benchmark_cumulative_return(returns, benchmark_returns)
 
 
 def get_portfolio_summary(
@@ -195,5 +240,23 @@ def get_portfolio_summary(
         "volatility_ann": volatility_ann,
         "sharpe": sharpe,
     }
+
+    # Benchmark comparison for every period except the intraday TODAY view.
+    if period != "TODAY":
+        start, _, yesterday = get_period_bounds(period)
+        benchmark_returns = get_benchmark_returns(start, yesterday)["return"]
+
+        benchmark_scale = 252  # Benchmark returns are always daily.
+        benchmark_mean_return_ann = benchmark_returns.mean() * benchmark_scale
+        benchmark_volatility_ann = benchmark_returns.std() * (benchmark_scale**0.5)
+
+        summary.update(
+            {
+                "benchmark_total_return": (benchmark_returns + 1).product() - 1,
+                "benchmark_mean_return_ann": benchmark_mean_return_ann,
+                "benchmark_volatility_ann": benchmark_volatility_ann,
+                "benchmark_sharpe": benchmark_mean_return_ann / benchmark_volatility_ann,
+            }
+        )
 
     return summary
