@@ -196,9 +196,7 @@ def get_portfolio_history(
     match period:
         case "TODAY":
             interval = dt.timedelta(minutes=1)
-        case "5D" | "1M":
-            interval = dt.timedelta(hours=1)
-        case "6M" | "1Y" | "ALL":
+        case _:
             interval = dt.timedelta(days=1)
 
     returns = calculate_returns(equity, interval)
@@ -214,28 +212,39 @@ def get_portfolio_history(
     return add_benchmark_cumulative_return(returns, benchmark_returns)
 
 
+def annualized_metrics(
+    returns: pl.Series, scale: float
+) -> tuple[float | None, float | None, float | None]:
+    # std() is None with fewer than two observations, which can happen when a
+    # short window only has a day or two of data.
+    mean = returns.mean()
+    std = returns.std()
+
+    mean_ann = mean * scale if mean is not None else None
+    volatility_ann = std * (scale**0.5) if std is not None else None
+    sharpe = mean_ann / volatility_ann if mean_ann is not None and volatility_ann else None
+
+    return mean_ann, volatility_ann, sharpe
+
+
 def get_portfolio_summary(
     period: Literal["TODAY", "5D", "1M", "6M", "1Y", "ALL"],
 ) -> dict:
     match period:
         case "TODAY":
-            scale = 252 * 16 * 60  # 60 minutes in an hour
-        case "5D" | "1M":
-            scale = 252 * 16  # 11 hours in extended trading day 4am-8pm
-        case "6M" | "1Y" | "ALL":
-            scale = 252  # 252 trading days in a year
+            scale = 252 * 16 * 60  # minutes in an extended trading day
+        case _:
+            scale = 252  # 252 trading days in a year (daily returns)
 
     returns = get_portfolio_history(period)
 
-    total_return = returns["cumulative_return"].last()
-    total_return_dollar = returns["cumulative_return_dollar"].last()
-    mean_return_ann = returns["return_"].mean() * scale
-    volatility_ann = returns["return_"].std() * (scale**0.5)
-    sharpe = mean_return_ann / volatility_ann
+    mean_return_ann, volatility_ann, sharpe = annualized_metrics(
+        returns["return_"], scale
+    )
 
     summary = {
-        "total_return": total_return,
-        "total_return_dollar": total_return_dollar,
+        "total_return": returns["cumulative_return"].last(),
+        "total_return_dollar": returns["cumulative_return_dollar"].last(),
         "mean_return_ann": mean_return_ann,
         "volatility_ann": volatility_ann,
         "sharpe": sharpe,
@@ -246,16 +255,19 @@ def get_portfolio_summary(
         start, _, yesterday = get_period_bounds(period)
         benchmark_returns = get_benchmark_returns(start, yesterday)["return"]
 
-        benchmark_scale = 252  # Benchmark returns are always daily.
-        benchmark_mean_return_ann = benchmark_returns.mean() * benchmark_scale
-        benchmark_volatility_ann = benchmark_returns.std() * (benchmark_scale**0.5)
+        # Benchmark returns are always daily.
+        b_mean_ann, b_volatility_ann, b_sharpe = annualized_metrics(
+            benchmark_returns, 252
+        )
 
         summary.update(
             {
-                "benchmark_total_return": (benchmark_returns + 1).product() - 1,
-                "benchmark_mean_return_ann": benchmark_mean_return_ann,
-                "benchmark_volatility_ann": benchmark_volatility_ann,
-                "benchmark_sharpe": benchmark_mean_return_ann / benchmark_volatility_ann,
+                "benchmark_total_return": (benchmark_returns + 1).product() - 1
+                if benchmark_returns.len()
+                else None,
+                "benchmark_mean_return_ann": b_mean_ann,
+                "benchmark_volatility_ann": b_volatility_ann,
+                "benchmark_sharpe": b_sharpe,
             }
         )
 

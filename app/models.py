@@ -12,11 +12,11 @@ class PortfolioSnapshot(BaseModel):
 
 
 class PortfolioSummary(BaseModel):
-    total_return: float
-    total_return_dollar: float
-    mean_return_ann: float
-    volatility_ann: float
-    sharpe: float
+    total_return: float | None = None
+    total_return_dollar: float | None = None
+    mean_return_ann: float | None = None
+    volatility_ann: float | None = None
+    sharpe: float | None = None
     benchmark_total_return: float | None = None
     benchmark_mean_return_ann: float | None = None
     benchmark_volatility_ann: float | None = None
