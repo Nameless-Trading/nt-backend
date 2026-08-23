@@ -21,3 +21,26 @@ class PortfolioSummary(BaseModel):
     benchmark_mean_return_ann: float | None = None
     benchmark_volatility_ann: float | None = None
     benchmark_sharpe: float | None = None
+
+
+class SignalMetrics(BaseModel):
+    value: float | None = None
+    score: float | None = None
+    alpha: float | None = None
+
+
+class SecurityRow(BaseModel):
+    ticker: str
+    price: float | None = None
+    return_1d: float | None = None
+    return_5d: float | None = None
+    return_1m: float | None = None
+    idio_vol: float | None = None
+    weight: float | None = None
+    signals: dict[str, SignalMetrics]
+
+
+class SecuritiesResponse(BaseModel):
+    date: str
+    signals: list[str]
+    rows: list[SecurityRow]
