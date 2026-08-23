@@ -36,7 +36,10 @@ class SecurityRow(BaseModel):
     return_5d: float | None = None
     return_1m: float | None = None
     idio_vol: float | None = None
+    historical_beta: float | None = None
+    predicted_beta: float | None = None
     weight: float | None = None
+    benchmark_weight: float | None = None
     signals: dict[str, SignalMetrics]
 
 

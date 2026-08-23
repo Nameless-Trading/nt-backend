@@ -75,6 +75,16 @@ def get_securities(date_: dt.date) -> dict:
         .filter(pl.col("date").eq(date_))
         .select("ticker", "weight")
     )
+    benchmark_weight = client.query(
+        bl.table("benchmark_weights")
+        .filter(pl.col("date").eq(date_))
+        .select("ticker", pl.col("weight").alias("benchmark_weight"))
+    )
+    betas = client.query(
+        bl.table("betas")
+        .filter(pl.col("date").eq(date_))
+        .select("ticker", "historical_beta", "predicted_beta")
+    )
 
     returns = get_trailing_returns(client, date_)
 
@@ -86,7 +96,9 @@ def get_securities(date_: dt.date) -> dict:
         universe.join(price, on="ticker", how="left")
         .join(returns, on="ticker", how="left")
         .join(idio_vol, on="ticker", how="left")
+        .join(betas, on="ticker", how="left")
         .join(weight, on="ticker", how="left")
+        .join(benchmark_weight, on="ticker", how="left")
         .join(values, on="ticker", how="left")
         .join(scores, on="ticker", how="left")
         .join(alphas, on="ticker", how="left")
@@ -111,7 +123,10 @@ def get_securities(date_: dt.date) -> dict:
             "return_5d": record.get("return_5d"),
             "return_1m": record.get("return_1m"),
             "idio_vol": record.get("idio_vol"),
+            "historical_beta": record.get("historical_beta"),
+            "predicted_beta": record.get("predicted_beta"),
             "weight": record.get("weight"),
+            "benchmark_weight": record.get("benchmark_weight"),
             "signals": {
                 name: {
                     "value": record.get(f"{name}__value"),
